@@ -110,7 +110,9 @@ app.get("/watcher", function (req, res) {
 
 app.get("/watchlistupdate", function (req, res) {
   let spotify_user_uri = req.query.spotify_user_uri;
-  GetUserWatchlist(spotify_user_uri);
+  let watchlist = GetUserWatchlist(spotify_user_uri);
+  console.log(watchlist);
+  res.json(watchlist);
 });
 
 // receive add playlist requests
@@ -166,7 +168,7 @@ app.post("/watcher", function (req, res) {
   );
 });
 
-// returns JSON array of playlists in user's watchlist
+// returns array of playlists in user's watchlist
 function GetUserWatchlist(user_uri) {
   MongoClient.connect(mongoURI, function (err, db) {
     if (err) throw err;
@@ -176,10 +178,29 @@ function GetUserWatchlist(user_uri) {
         .collection("PlaylistWatcherUsers");
       collection
         .find({
-          spotify_uri: spotify_user_uri,
+          spotify_uri: user_uri,
         })
         .toArray(function (err, result) {
-          console.log(result);
+          var dbPlaylists = result[0].playlists;
+          var watchlist = [];
+          // Get the name and img url for each playlist uri
+          /* TODO: global watchlist array is not getting updated in asynchronous call: 
+          store name/img directly in database when each playlist is inserted (all inside of find playlist callback) 
+          Change this code to just get the values from the database and return them */
+          for (let i = 0; i < dbPlaylists.length; i++) {
+            let playlist_uri = new String(dbPlaylists[i].spotify_uri);
+            spotifyApi
+              .getPlaylist(playlist_uri.replace("spotify:playlist:", ""))
+              .then(function (data) {
+                let playlist = {};
+                playlist.uri = data.body.uri;
+                playlist.name = data.body.name;
+                playlist.img = data.body.images[0].url;
+                watchlist.push(playlist);
+              });
+          }
+          console.log("Watchlist: " + watchlist);
+          return watchlist;
         });
     }
   });
