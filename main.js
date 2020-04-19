@@ -59,7 +59,6 @@ app.get("/loginsuccess/", function (req, res, next) {
           let displayName = data.body.display_name;
           let spotifyURI = data.body.uri;
 
-          console.log(displayName + ", " + spotifyURI);
           app.locals.displayName = displayName;
           app.locals.spotifyURI = spotifyURI;
 
@@ -81,7 +80,7 @@ app.get("/loginsuccess/", function (req, res, next) {
                     console.log(
                       "User does not exist, inserting into database..."
                     );
-                    collection.insert({
+                    collection.insertOne({
                       display_name: displayName,
                       spotify_uri: spotifyURI,
                       playlists: [],
@@ -110,15 +109,15 @@ app.get("/watcher", function (req, res) {
 
 app.get("/watchlistupdate", function (req, res) {
   let spotify_user_uri = req.query.spotify_user_uri;
-  let watchlist = GetUserWatchlist(spotify_user_uri);
-  console.log(watchlist);
-  res.json(watchlist);
+  console.log("watchlistupdate spotify_user_uri: " + spotify_user_uri);
+  GetUserWatchlist(spotify_user_uri, res);
 });
 
 // receive add playlist requests
 app.post("/watcher", function (req, res) {
-  console.log(req.body.playlist_uri);
-  console.log(req.body.spotify_user_uri);
+  console.log("User is trying to insert playlist with information: ");
+  console.log("Playlist_URI: " + req.body.playlist_uri);
+  console.log("User_URI: " + req.body.spotify_user_uri);
 
   let playlist_uri = req.body.playlist_uri;
   let spotify_user_uri = req.body.spotify_user_uri;
@@ -126,6 +125,10 @@ app.post("/watcher", function (req, res) {
   spotifyApi.getPlaylist(playlist_uri.replace("spotify:playlist:", "")).then(
     function (data) {
       console.log("Valid Spotify playlist URI.");
+      console.log(data);
+      let playlist_name = data.body.name;
+      let img_uri = data.body.images[0].url;
+      let author = data.body;
       // check if playlist exists, if not insert
       MongoClient.connect(mongoURI, function (err, db) {
         if (err) throw err;
@@ -147,7 +150,12 @@ app.post("/watcher", function (req, res) {
                   { spotify_uri: spotify_user_uri },
                   {
                     $push: {
-                      playlists: { spotify_uri: playlist_uri, tracks: [] },
+                      playlists: {
+                        spotify_uri: playlist_uri,
+                        name: playlist_name,
+                        img_uri: img_uri,
+                        tracks: [],
+                      },
                     },
                   },
                   function (err, doc) {
@@ -169,7 +177,7 @@ app.post("/watcher", function (req, res) {
 });
 
 // returns array of playlists in user's watchlist
-function GetUserWatchlist(user_uri) {
+async function GetUserWatchlist(user_uri, res) {
   MongoClient.connect(mongoURI, function (err, db) {
     if (err) throw err;
     else {
@@ -181,26 +189,24 @@ function GetUserWatchlist(user_uri) {
           spotify_uri: user_uri,
         })
         .toArray(function (err, result) {
+          // TODO: result[0] is undefined when user first creates an account
           var dbPlaylists = result[0].playlists;
-          var watchlist = [];
-          // Get the name and img url for each playlist uri
-          /* TODO: global watchlist array is not getting updated in asynchronous call: 
-          store name/img directly in database when each playlist is inserted (all inside of find playlist callback) 
-          Change this code to just get the values from the database and return them */
-          for (let i = 0; i < dbPlaylists.length; i++) {
-            let playlist_uri = new String(dbPlaylists[i].spotify_uri);
-            spotifyApi
-              .getPlaylist(playlist_uri.replace("spotify:playlist:", ""))
-              .then(function (data) {
-                let playlist = {};
-                playlist.uri = data.body.uri;
-                playlist.name = data.body.name;
-                playlist.img = data.body.images[0].url;
-                watchlist.push(playlist);
-              });
+          var watchlist;
+          if (dbPlaylists.length > 0) {
+            watchlist = [];
+            // Get the name and img url for each playlist uri
+            for (let i = 0; i < dbPlaylists.length; i++) {
+              let playlist = {};
+              playlist.spotify_uri = dbPlaylists[i].spotify_uri;
+              playlist.name = dbPlaylists[i].name;
+              playlist.img_uri = dbPlaylists[i].img_uri;
+              watchlist.push(playlist);
+            }
+          } else {
+            watchlist = "empty";
           }
-          console.log("Watchlist: " + watchlist);
-          return watchlist;
+          console.log("Watchlist in GetUserWatchlist: " + watchlist);
+          res.json(watchlist);
         });
     }
   });
