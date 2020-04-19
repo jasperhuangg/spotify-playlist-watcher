@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+
+    <title>Spotify Watcher - Login</title>
+    <style></style>
+  </head>
+  <body>
+    <div class="container-fluid text-center">
+      <br /><br /><br />
+      <button
+        id="log-in-button"
+        type="button"
+        class="btn btn-outline-success btn-lg"
+        href="/login"
+      >
+        Login
+      </button>
+    </div>
+  </body>
+  <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+  <script>
+    localStorage.setItem("login", "false");
+    $("#log-in-button").on("click", function () {
+      window.open("/login");
+    });
+
+    // if focus has returned to this tab and login has been set to true,
+    // redirect user to different page
+    var hidden, visibilityChange;
+    if (typeof document.hidden !== "undefined") {
+      // Opera 12.10 and Firefox 18 and later support
+      hidden = "hidden";
+      visibilityChange = "visibilitychange";
+    } else if (typeof document.msHidden !== "undefined") {
+      hidden = "msHidden";
+      visibilityChange = "msvisibilitychange";
+    } else if (typeof document.webkitHidden !== "undefined") {
+      hidden = "webkitHidden";
+      visibilityChange = "webkitvisibilitychange";
+    }
+    // If the page is hidden, pause the video;
+    // if the page is shown, play the video
+    function handleVisibilityChange() {
+      if (document[hidden]) {
+        console.log("hidden");
+      } else {
+        console.log("shown");
+        if (localStorage.getItem("login") === "true") {
+          console.log("redirecting...");
+          window.localStorage.clear();
+          window.location.href = "/watcher";
+        } else {
+          alert("The login failed...");
+        }
+      }
+    }
+
+    if (
+      typeof document.addEventListener === "undefined" ||
+      hidden === undefined
+    ) {
+      console.log(
+        "This requires a browser, such as Google Chrome or Firefox, that supports the Page Visibility API."
+      );
+    } else {
+      // Handle page visibility change
+      document.addEventListener(
+        visibilityChange,
+        handleVisibilityChange,
+        false
+      );
+    }
+  </script>
+</html>

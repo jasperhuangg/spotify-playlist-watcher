@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Quicksand&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+
+    <title>Spotify Watcher</title>
+    <style>
+      .container-fluid {
+        width: 50%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid text-center">
+      <h1><%= displayName %>'s Spotify Watcher</h1>
+      <div id="spotify-user-uri" class="d-none"><%= spotifyURI %></div>
+      <br /><br /><br /><br /><br />
+      <form method="POST">
+        <div class="form-group">
+          <label for="playlist_uri"
+            >Add a playlist to your watchlist (Spotify URI):</label
+          >
+          <input
+            type="text"
+            name="playlist_uri"
+            class="form-control font-italic"
+            id="playlist_uri"
+            placeholder="e.g. spotify:playlist:37i9dQZF1DX9XIFQuFvzM4"
+          />
+        </div>
+        <button
+          type="submit"
+          id="playlist_uri_button"
+          class="btn btn-outline-success btn-lg"
+        >
+          Add to Watchlist
+        </button>
+      </form>
+      <br /><br /><br /><br />
+      <h3>Your Watchlist:</h3>
+    </div>
+  </body>
+  <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+  <script>
+    function UpdateWatchlist() {
+      console.log($("#spotify-user-uri").html());
+      $.get(
+        "/watchlistupdate",
+        { spotify_user_uri: $("#spotify-user-uri").html() },
+        function (result) {
+          console.log(result); // result should be JSON containing all playlists in user's watchlist
+        }
+      );
+    }
+
+    UpdateWatchlist();
+
+    $("#playlist_uri_button").on("click", function (e) {
+      let playlist_uri = $("#playlist_uri").val();
+      let spotify_user_uri = $("#spotify-user-uri").html();
+      if (playlist_uri !== "") {
+        e.preventDefault();
+        $("#playlist_uri").val("");
+        $.post(
+          "/watcher",
+          {
+            playlist_uri: playlist_uri,
+            spotify_user_uri: spotify_user_uri,
+          },
+          function (result) {
+            UpdateWatchlist();
+            alert(result);
+          }
+        );
+      }
+    });
+  </script>
+</html>
