@@ -21,12 +21,11 @@
   </head>
   <body>
     <div class="container-fluid text-center">
-      <h1><%= displayName %>'s Spotify Watcher</h1>
       <div id="spotify-user-uri" class="d-none"><%= spotifyURI %></div>
-      <br /><br /><br /><br /><br />
+      <br /><br />
       <form method="POST">
         <div class="form-group">
-          <label for="playlist_uri"
+          <label for="playlist_uri" class="font-weight-bold font-italic"
             >Add a playlist to your watchlist (Spotify URI):</label
           >
           <input
@@ -40,31 +39,96 @@
         <button
           type="submit"
           id="playlist_uri_button"
-          class="btn btn-outline-success btn-lg"
+          class="btn btn-outline-success"
         >
           Add to Watchlist
         </button>
       </form>
+      <br /><br />
+      <p>Choose a device for playback:</p>
+      <div class="dropdown">
+        <div class="btn-group">
+          <button
+            class="btn btn-success dropdown-toggle"
+            data-toggle="dropdown"
+            id="dropdownMenuButton"
+          >
+            Select a device for playback
+          </button>
+          <div
+            id="devices-dropdown"
+            class="dropdown-menu"
+            aria-labelledby="dropdownMenuButton"
+          ></div>
+        </div>
+      </div>
       <br /><br /><br /><br />
-      <h3>Your Watchlist:</h3>
+      <h3><%=displayName %>'s Watchlist:</h3>
+      <div id="watchlist"></div>
     </div>
   </body>
   <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
   <script>
     function UpdateWatchlist() {
-      console.log($("#spotify-user-uri").html());
       $.get(
         "/watchlistupdate",
         { spotify_user_uri: $("#spotify-user-uri").html() },
         function (result) {
-          console.log(result); // result should be JSON containing all playlists in user's watchlist
+          if (result !== "empty") {
+            console.log(result); // result should be JSON containing all playlists in user's watchlist
+            let tableHTML = '<table class="table table-hover">';
+            for (let i = 0; i < result.length; i++) {
+              tableHTML +=
+                "<tr><td>" +
+                result[i].name +
+                "</td><td><a class='watch-button text-white btn btn-success'>Play + Start Watching</a><a class='d-none stop-watch-button text-white btn btn-danger'>Stop</a></td><td class='playlist-uri-hidden d-none'>" +
+                result[i].spotify_uri +
+                "</td></tr>";
+            }
+            tableHTML += "</table>";
+            $("#watchlist").html(tableHTML);
+          } else {
+            $("#watchlist").html(
+              "Nothing in your watchlist at the moment. Add something above!"
+            );
+          }
         }
       );
     }
 
     UpdateWatchlist();
 
+    $(".dropdown-menu li a").click(function () {
+      $(".btn:first-child").text($(this).text());
+      $(".btn:first-child").val($(this).text());
+    });
+
+    function GetUserDevices() {
+      $.get(
+        "/userdevices",
+        { spotify_user_uri: $("#spotify-user-uri").html() },
+        function (result) {
+          if (result !== "empty") {
+            console.log(result); // result should be JSON containing all playlists in user's watchlist
+            let dropdownOptionsHTML = "";
+            for (let i = 0; i < result.length; i++) {
+              dropdownOptionsHTML +=
+                "<a class='dropdown-item'>" +
+                result[i].name +
+                "</a><a class='d-none'>" +
+                result[i].id +
+                "</a>";
+            }
+            $("#devices-dropdown").html(dropdownOptionsHTML);
+          }
+        }
+      );
+    }
+
+    GetUserDevices();
+
     $("#playlist_uri_button").on("click", function (e) {
+      e.preventDefault();
       let playlist_uri = $("#playlist_uri").val();
       let spotify_user_uri = $("#spotify-user-uri").html();
       if (playlist_uri !== "") {
@@ -84,6 +148,51 @@
           }
         );
       }
+    });
+
+    $(document).on("click", ".stop-watch-button", function () {
+      $(this).parent().find(".watch-button").removeClass("d-none");
+      $(this).addClass("d-none");
+      $.post("/stop-watching", {}, function (result) {
+        console.log("returned");
+      });
+    });
+
+    $(document).on("click", ".watch-button", function () {
+      let user_uri = $("#spotify-user-uri").html();
+      $(this)
+        .parent()
+        .parent()
+        .parent()
+        .find(".stop-watch-button")
+        .addClass("d-none");
+      $(this)
+        .parent()
+        .parent()
+        .parent()
+        .find(".watch-button")
+        .removeClass("d-none");
+      $(this).addClass("d-none");
+      $(this)
+        .parent()
+        .parent()
+        .find(".stop-watch-button")
+        .removeClass("d-none");
+      let playlist_uri = $(this)
+        .parent()
+        .parent()
+        .find(".playlist-uri-hidden")
+        .html();
+      $.post(
+        "/start-watching",
+        { playlist_uri: playlist_uri, spotify_user_uri: user_uri },
+        function (result) {
+          console.log("returned");
+        }
+      );
+      // send playlist uri to the back end
+      // back end invokes spotify api to start playing playlist
+      // back end pings
     });
   </script>
 </html>
