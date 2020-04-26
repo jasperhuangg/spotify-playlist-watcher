@@ -159,16 +159,16 @@ app.get("/userdevices", function (req, res) {
 
 // receive add playlist requests
 app.post("/watcher", function (req, res) {
-  console.log("User is trying to insert playlist with information: ");
-  console.log("Playlist_URI: " + req.body.playlist_uri);
-  console.log("User_URI: " + req.body.spotify_user_uri);
+  // console.log("User is trying to insert playlist with information: ");
+  // console.log("Playlist_URI: " + req.body.playlist_uri);
+  // console.log("User_URI: " + req.body.spotify_user_uri);
 
   let playlist_uri = req.body.playlist_uri;
   let spotify_user_uri = req.body.spotify_user_uri;
 
   spotifyApi.getPlaylist(playlist_uri.replace("spotify:playlist:", "")).then(
     function (data) {
-      console.log("Valid Spotify playlist URI.");
+      // console.log("Valid Spotify playlist URI.");
       let playlist_name = data.body.name;
       let img_uri = data.body.images[0].url;
       let author = data.body.author;
@@ -287,6 +287,33 @@ function GetUserDevices(user_uri, res) {
   });
 }
 
+function GetScore(time, trackLength) {
+  /* SCORING: (time = num entries for old song * 10)
+      - time <= max(10 seconds or 10% of track length): -70
+      - max(15 seconds or 10% of track length) < time <= 25% of track length: -30
+      - 25% of track length < time <= 45% of track length: -10
+      - 45% of track length < time <= 65% of track length: +20
+      - 65% of track length < time <= 85% of track length: +40
+      - 85% of track length < time <= 100% of track length: +70
+      */
+  if (time <= Math.max(10, trackLength * 0.1)) {
+    return -70;
+  } else if (
+    time > Math.max(10, trackLength * 0.1) &&
+    time <= trackLength * 0.25
+  ) {
+    return -30;
+  } else if (time > trackLength * 0.25 && time <= trackLength * 0.45) {
+    return -10;
+  } else if (time > trackLength * 0.45 && time <= trackLength * 0.65) {
+    return 20;
+  } else if (time > trackLength * 0.65 && time <= trackLength * 0.85) {
+    return 40;
+  } else if (time > trackLength * 0.85 && time <= trackLength) {
+    return 70;
+  }
+}
+
 /* 
 pings spotify server with userID to get current listening data 
 pushes listening data to db
@@ -304,8 +331,10 @@ function UpdateTrackScores(userID) {
   );
   // hit get current playback endpoint, get track's spotify ID and context ID (playlist ID)
   spotifyApi.getMyCurrentPlaybackState().then(function (data) {
+    // console.log(data);
     let trackURI = data.body.item.uri;
     let trackName = data.body.item.name;
+    let trackLengthSeconds = data.body.item.duration_ms / 1000;
     let contextURI = data.body.context.uri;
     let isPlaying = data.body.is_playing;
 
@@ -361,7 +390,9 @@ function UpdateTrackScores(userID) {
                         {
                           spotify_uri: userID,
                           playlists: {
-                            $elemMatch: { spotify_uri: contextURI },
+                            $elemMatch: {
+                              spotify_uri: contextURI,
+                            },
                           },
                         },
                         {
@@ -370,6 +401,7 @@ function UpdateTrackScores(userID) {
                               spotify_uri: trackURI,
                               name: trackName,
                               score: 1000,
+                              duration: trackLengthSeconds,
                             },
                           },
                         },
@@ -379,16 +411,88 @@ function UpdateTrackScores(userID) {
                       );
                     }
                   });
+
+                collection
+                  .find({ spotify_uri: userID })
+                  .toArray(function (err, result) {
+                    let listeningQueue = result[0].listeningQueue;
+                    if (listeningQueue.length) {
+                      // we have stuff in the queue already
+                      let lastTrackURI =
+                        listeningQueue[result.length - 1].spotify_uri;
+                      let lastTrackDuration =
+                        listeningQueue[result.length - 1].duration;
+                      // user just changed tracks
+                      if (trackURI !== lastTrackURI) {
+                        // calculate and update the score in playlists->tracks
+                        let timeListened = listeningQueue.length * 10;
+                        let score = GetScore(timeListened, lastTrackDuration);
+                        console.log("calculated score: " + score);
+                        collection.findOneAndUpdate(
+                          {
+                            spotify_uri: userID,
+                            playlists: {
+                              $elemMatch: {
+                                spotify_uri: contextURI,
+                              },
+                            },
+                            tracks: {
+                              $elemMatch: {
+                                spotify_uri: trackURI,
+                              },
+                            },
+                          },
+                          {
+                            $inc: {
+                              "playlists.$.tracks.$.score": score,
+                            },
+                          },
+                          function (err, doc) {
+                            if (err) console.error(err);
+                          }
+                        );
+
+                        // clear the listening queue
+                        collection.findOneAndUpdate(
+                          { spotify_uri: user_uri },
+                          {
+                            $set: {
+                              listeningQueue: [],
+                            },
+                          },
+                          function (err, doc) {
+                            if (err) console.error(err);
+                            else console.log("Cleared listening queue.");
+                          }
+                        );
+                      }
+                    }
+                    // add the new entry to the queue
+                    collection.findOneAndUpdate(
+                      { spotify_uri: userID },
+                      {
+                        $push: {
+                          listeningQueue: {
+                            spotify_uri: trackURI,
+                            name: trackName,
+                          },
+                        },
+                      },
+                      function (err, doc) {
+                        if (err) console.error(err);
+                      }
+                    );
+                  });
+                // if queue is empty: add song to queue
+                // if queue is not empty: compare song in queue to current playback song
+                //// if song differs: iterate through all entries in queue, calculate score to increment/decrement based on listening behavior, pop everything off the queue
+                //// push query onto the queue
               } else {
                 console.log("Playlist not in watchlist");
               }
             });
         }
       });
-      // if queue is empty: add song to queue
-      // if queue is not empty: compare song in queue to current playback song
-      //// if song differs: iterate through all entries in queue, calculate score to increment/decrement based on listening behavior, pop everything off the queue
-      //// push query onto the queue
     } else {
       console.log("Playback is paused.");
     }
@@ -421,7 +525,7 @@ app.post("/start-watching", function (req, res) {
       .db("PlaylistWatcherUsers")
       .collection("PlaylistWatcherUsers");
     collection.findOneAndUpdate(
-      { spotify_uri: spotifyURI },
+      { spotify_uri: user_uri },
       {
         $set: {
           listeningQueue: [],
@@ -432,66 +536,24 @@ app.post("/start-watching", function (req, res) {
         else console.log("Cleared listening queue.");
       }
     );
-  });
 
-  UpdateTrackScores(user_uri);
-  var interval = setInterval(UpdateTrackScores, 10000, user_uri); // does listening stat calculations every 10 seconds
+    UpdateTrackScores(user_uri);
+    var interval = setInterval(UpdateTrackScores, 10000, user_uri); // does listening stat calculations every 10 seconds
 
-  // MongoClient.connect(mongoURI, function (err, db) {
-  //   if (err) throw err;
-  //   else {
-  //     let collection = db
-  //       .db("PlaylistWatcherUsers")
-  //       .collection("PlaylistWatcherUsers");
-  //     collection
-  //       .find({ spotify_uri: user_uri })
-  //       .toArray(function (err, result) {
-  //         if (err) console.error(err);
-  //         else if (result.length) {
-  //           let device_id = result[0].activeDeviceIDs[0].id;
-
-  //           // transfer playback to that device_id (make it active)
-  //           $.ajax({
-  //             headers: {
-  //               Authorization: "Bearer " + spotifyApi.getAccessToken(),
-  //               Accept: "application/json",
-  //               "Content-Type": "application/json",
-  //             },
-  //             url: "https://api.spotify.com/v1/me/player",
-  //             type: "PUT",
-  //             data: JSON.stringify({ device_ids: [device_id] }),
-  //           });
-
-  //           // start playing the requested playlist on device with device_id:
-  //           $.ajax({
-  //             headers: {
-  //               Authorization: "Bearer " + spotifyApi.getAccessToken(),
-  //               Accept: "application/json",
-  //               "Content-Type": "application/json",
-  //             },
-  //             url:
-  //               "https://api.spotify.com/v1/me/player/play?device_id=" +
-  //               device_id,
-  //             type: "PUT",
-  //             data: JSON.stringify({ context_uri: playlist_uri }),
-  //           });
-  //         }
-  //       });
-  //   }
-  // });
-  app.post("/stop-watching", function (req, res) {
-    // TODO: clear user's recent tracks queue in db
-    console.log("received stop watching");
-    clearInterval(interval);
-    // stop user playback:
-    $.ajax({
-      headers: {
-        Authorization: "Bearer " + spotifyApi.getAccessToken(),
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      url: "https://api.spotify.com/v1/me/player/pause",
-      type: "PUT",
+    app.post("/stop-watching", function (req, res) {
+      // TODO: clear user's recent tracks queue in db
+      console.log("received stop watching");
+      clearInterval(interval);
+      // stop user playback:
+      $.ajax({
+        headers: {
+          Authorization: "Bearer " + spotifyApi.getAccessToken(),
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        url: "https://api.spotify.com/v1/me/player/pause",
+        type: "PUT",
+      });
     });
   });
 });
