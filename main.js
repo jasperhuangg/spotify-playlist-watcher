@@ -288,6 +288,7 @@ function GetUserDevices(user_uri, res) {
 }
 
 function GetScore(time, trackLength) {
+  console.log("time: " + time + ", tracklength: " + trackLength);
   /* SCORING: (time = num entries for old song * 10)
       - time <= max(10 seconds or 10% of track length): -70
       - max(15 seconds or 10% of track length) < time <= 25% of track length: -30
@@ -309,7 +310,7 @@ function GetScore(time, trackLength) {
     return 20;
   } else if (time > trackLength * 0.65 && time <= trackLength * 0.85) {
     return 40;
-  } else if (time > trackLength * 0.85 && time <= trackLength) {
+  } else {
     return 70;
   }
 }
@@ -401,7 +402,6 @@ function UpdateTrackScores(userID) {
                               spotify_uri: trackURI,
                               name: trackName,
                               score: 1000,
-                              duration: trackLengthSeconds,
                             },
                           },
                         },
@@ -417,6 +417,7 @@ function UpdateTrackScores(userID) {
                   .toArray(function (err, result) {
                     let listeningQueue = result[0].listeningQueue;
                     if (listeningQueue.length) {
+                      console.log(listeningQueue[result.length - 1]);
                       // we have stuff in the queue already
                       let lastTrackURI =
                         listeningQueue[result.length - 1].spotify_uri;
@@ -428,33 +429,54 @@ function UpdateTrackScores(userID) {
                         let timeListened = listeningQueue.length * 10;
                         let score = GetScore(timeListened, lastTrackDuration);
                         console.log("calculated score: " + score);
-                        collection.findOneAndUpdate(
-                          {
+                        // collection.findOneAndUpdate(
+                        //   {
+                        //     spotify_uri: userID,
+                        //     playlists: {
+                        //       $elemMatch: {
+                        //         spotify_uri: contextURI,
+                        //       },
+                        //     },
+                        //     tracks: {
+                        //       $elemMatch: {
+                        //         spotify_uri: trackURI,
+                        //       },
+                        //     },
+                        //   },
+                        //   {
+                        //     $inc: {
+                        //       "playlists.$.tracks.$.score": score,
+                        //     },
+                        //   },
+                        //   function (err, doc) {
+                        //     if (err) console.error(err);
+                        //   }
+                        // );
+
+                        collection
+                          .find({
                             spotify_uri: userID,
-                            playlists: {
-                              $elemMatch: {
-                                spotify_uri: contextURI,
-                              },
-                            },
-                            tracks: {
-                              $elemMatch: {
-                                spotify_uri: trackURI,
-                              },
-                            },
-                          },
-                          {
-                            $inc: {
-                              "playlists.$.tracks.$.score": score,
-                            },
-                          },
-                          function (err, doc) {
-                            if (err) console.error(err);
-                          }
-                        );
+                          })
+                          .forEach(function (user) {
+                            if (user.playlists) {
+                              user.playlists.forEach(function (playlist) {
+                                if (playlist.spotify_uri === contextURI) {
+                                  console.log(playlist.name);
+                                  playlist.tracks.forEach(function (track) {
+                                    if (track.spotify_uri === lastTrackURI) {
+                                      console.log(track);
+                                      track.score = track.score + score;
+                                    }
+                                  });
+                                }
+                              });
+                              collection.save(user);
+                            }
+                          });
 
                         // clear the listening queue
                         collection.findOneAndUpdate(
-                          { spotify_uri: user_uri },
+                          { spotify_uri: userID },
                           {
                             $set: {
                               listeningQueue: [],
@@ -475,6 +497,7 @@ function UpdateTrackScores(userID) {
                           listeningQueue: {
                             spotify_uri: trackURI,
                             name: trackName,
+                            duration: trackLengthSeconds,
                           },
                         },
                       },
